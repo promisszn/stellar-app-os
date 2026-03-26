@@ -6,7 +6,6 @@ import { Button } from '@/components/atoms/Button';
 import { Text } from '@/components/atoms/Text';
 import { Badge } from '@/components/atoms/Badge';
 import { Counter } from '@/components/atoms/Counter';
-import { OnboardingTour } from '@/components/organisms/OnboardingTour/OnboardingTour';
 import SocialShareButtons from '@/components/SocialShareButtons';
 import {
   Card,
@@ -15,13 +14,8 @@ import {
   CardDescription,
   CardContent,
 } from '@/components/molecules/Card';
-import { OnboardingTour } from '@/components/organisms/OnboardingTour';
-
-import { useToast } from '@/components/ui/toast/hooks';
-import { TransactionHistoryModal } from '../components/ui/TransactionHistoryModal';
-import { useState } from 'react';
 import { OnboardingTour } from '@/components/organisms/OnboardingTour/OnboardingTour';
-import { useToast } from '@/components/ui/toast/hooks';
+import { useToast } from '@/hooks/useToast';
 import { TransactionHistoryModal } from '@/components/ui/TransactionHistoryModal';
 import { useAppTranslation } from '@/hooks/useTranslation';
 
@@ -51,7 +45,7 @@ export default function Home(): JSX.Element {
 
       <CardContent className="flex flex-col gap-3">
         <Button
-          onClick={() => addToast({ message: t('home.profileSaved'), variant: 'success' })}
+          onClick={() => addToast(t('home.profileSaved'), 'success')}
           variant="default"
           size="lg"
           className="w-full"
@@ -122,8 +116,6 @@ export default function Home(): JSX.Element {
           <Button asChild variant="outline" size="lg" className="w-full">
             <Link href="/api-docs">Explore API Documentation</Link>
           </Button>
-          <Button data-tour-id="purchase-credits-button" asChild variant="outline" size="lg" className="w-full">
-            <Link href="/credits/purchase">Purchase Carbon Credits</Link>
           <Button
             data-tour-id="purchase-credits-button"
             asChild
