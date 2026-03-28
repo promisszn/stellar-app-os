@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Header } from '@/components/organisms/Header/Header';
 import { Footer } from '@/components/organisms/Footer/Footer';
+import { CookieBanner } from '@/components/CookieBanner';
 import { ToastProvider } from '@/components/providers/ToastProvider';
 import { WalletProviderWrapper } from '@/components/providers/WalletProviderWrapper';
 import './globals.css';
@@ -60,6 +61,7 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`}>
         <WalletProviderWrapper>
           <ToastProvider>
+            <CookieBanner />
             <Header />
             {children}
             <Footer />
