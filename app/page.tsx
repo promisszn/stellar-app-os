@@ -6,6 +6,10 @@ import { Button } from '@/components/atoms/Button';
 import { Text } from '@/components/atoms/Text';
 import { Badge } from '@/components/atoms/Badge';
 import { Counter } from '@/components/atoms/Counter';
+<<<<<<< HEAD
+=======
+import { OnboardingTour } from '@/components/organisms/OnboardingTour/OnboardingTour';
+>>>>>>> a8c35fb (feat(nav): complete responsive sticky header for issue #2)
 import SocialShareButtons from '@/components/SocialShareButtons';
 import {
   Card,
@@ -14,8 +18,18 @@ import {
   CardDescription,
   CardContent,
 } from '@/components/molecules/Card';
+<<<<<<< HEAD
 import { OnboardingTour } from '@/components/organisms/OnboardingTour/OnboardingTour';
 import { useToast } from '@/hooks/useToast';
+=======
+import { OnboardingTour } from '@/components/organisms/OnboardingTour';
+
+import { useToast } from '@/components/ui/toast/hooks';
+import { TransactionHistoryModal } from '../components/ui/TransactionHistoryModal';
+import { useState } from 'react';
+import { OnboardingTour } from '@/components/organisms/OnboardingTour/OnboardingTour';
+import { useToast } from '@/components/ui/toast/hooks';
+>>>>>>> a8c35fb (feat(nav): complete responsive sticky header for issue #2)
 import { TransactionHistoryModal } from '@/components/ui/TransactionHistoryModal';
 import { useAppTranslation } from '@/hooks/useTranslation';
 
@@ -45,7 +59,11 @@ export default function Home(): JSX.Element {
 
       <CardContent className="flex flex-col gap-3">
         <Button
+<<<<<<< HEAD
           onClick={() => addToast(t('home.profileSaved'), 'success')}
+=======
+          onClick={() => addToast({ message: t('home.profileSaved'), variant: 'success' })}
+>>>>>>> a8c35fb (feat(nav): complete responsive sticky header for issue #2)
           variant="default"
           size="lg"
           className="w-full"
@@ -116,6 +134,11 @@ export default function Home(): JSX.Element {
           <Button asChild variant="outline" size="lg" className="w-full">
             <Link href="/api-docs">Explore API Documentation</Link>
           </Button>
+<<<<<<< HEAD
+=======
+          <Button data-tour-id="purchase-credits-button" asChild variant="outline" size="lg" className="w-full">
+            <Link href="/credits/purchase">Purchase Carbon Credits</Link>
+>>>>>>> a8c35fb (feat(nav): complete responsive sticky header for issue #2)
           <Button
             data-tour-id="purchase-credits-button"
             asChild
