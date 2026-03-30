@@ -11,12 +11,13 @@ Welcome to FarmCredit! This guide explains how to contribute to our decentralize
 1. [Welcome & Project Overview](#welcome--project-overview)
 2. [Prerequisites](#prerequisites)
 3. [Local Development Setup](#local-development-setup)
-4. [Project Architecture](#project-architecture)
-5. [Coding Standards](#coding-standards)
-6. [Commit Conventions](#commit-conventions)
-7. [Pull Request Process](#pull-request-process)
-8. [Issue Workflow](#issue-workflow)
-9. [Code Review Guidelines](#code-review-guidelines)
+4. [Git Hooks & Quality Gates](#git-hooks--quality-gates)
+5. [Project Architecture](#project-architecture)
+6. [Coding Standards](#coding-standards)
+7. [Commit Conventions](#commit-conventions)
+8. [Pull Request Process](#pull-request-process)
+9. [Issue Workflow](#issue-workflow)
+10. [Code Review Guidelines](#code-review-guidelines)
 
 ---
 
@@ -35,15 +36,15 @@ FarmCredit is a decentralized agricultural credit platform enabling farmers and 
 
 ### Tech Stack
 
-| Layer               | Technology                                                                                                    | Version  |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- | -------- |
-| **Framework**       | [Next.js](https://nextjs.org) (App Router)                                                                    | 16.1.6   |
-| **Language**        | [TypeScript](https://www.typescriptlang.org) (strict mode)                                                    | 5.x      |
-| **Styling**         | [Tailwind CSS](https://tailwindcss.com) v4 + [shadcn/ui](https://ui.shadcn.com)                               | 4.x      |
-| **Blockchain**      | [@stellar/stellar-sdk](https://developers.stellar.org/docs/build/sdks/js-stellar-sdk)                         | 11.2.2   |
-| **Wallet**          | [@stellar/freighter-api](https://developers.stellar.org/docs/build/apps/smart-contracts/guides/freighter-api) | 1.7.0    |
-| **Design System**   | Stellar brand colors + atomic design pattern                                                                  | Custom   |
-| **Package Manager** | [pnpm](https://pnpm.io)                                                                                       | 10.28.1+ |
+| Layer               | Technology                                                                                                          | Version  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- | -------- |
+| **Framework**       | [Next.js](https://nextjs.org) (App Router)                                                                          | 16.1.6   |
+| **Language**        | [TypeScript](https://www.typescriptlang.org) (strict mode)                                                          | 5.x      |
+| **Styling**         | [Tailwind CSS](https://tailwindcss.com) v4 + [shadcn/ui](https://ui.shadcn.com)                                     | 4.x      |
+| **Blockchain**      | [@stellar/stellar-sdk](https://developers.stellar.org/docs/build/sdks/js-stellar-sdk)                               | 11.2.2   |
+| **Wallet**          | [@stellar/freighter-api](https://developers.stellar.org/docs/build/apps/smart-contracts/guides/freighter-api)       | 1.7.0    |
+| **Design System**   | Stellar brand colors + atomic design pattern                                                                        | Custom   |
+| **Package Manager** | [pnpm](https://pnpm.io)                                                                                             | 10.28.1+ |
 
 ### Stellar Color Tokens
 
@@ -94,7 +95,6 @@ We recommend **VS Code** with these extensions:
 - **Prettier - Code formatter** — `esbenp.prettier-vscode`
 - **ESLint** — `dbaeumer.vscode-eslint`
 - **Tailwind CSS IntelliSense** — `bradlc.vscode-tailwindcss`
-- **TypeScript Vue Plugin (Volar)** — `Vue.volar` (if working with Vue components)
 
 ---
 
@@ -113,7 +113,7 @@ cd stellar-app-os
 pnpm install
 ```
 
-This installs all dependencies specified in `pnpm-lock.yaml`.
+This installs all dependencies and automatically sets up Husky git hooks via the `prepare` script.
 
 ### 3. Start Development Server
 
@@ -123,37 +123,20 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-**Expected output:**
-
-```
-  ▲ Next.js 16.1.6
-  - Local:        http://localhost:3000
-  - Environments: .env.local
-
-✓ Ready in 2.5s
-```
-
 ### 4. Environment Variables
-
-Create `.env.local` in the repo root:
 
 ```bash
 cp .env.example .env.local
 ```
 
-For now, most features work without environment variables. When adding features requiring external services, document them in `.env.example`.
+Most features work without environment variables. When adding features requiring external services, document them in `.env.example`.
 
 ### 5. Verify Everything Works
 
 ```bash
-# Check type safety
-pnpm build
-
-# Check code quality
-pnpm lint
-
-# Generate PWA icons (if modifying app icon)
-pnpm generate-icons
+pnpm build    # Type checking + full build
+pnpm lint     # Code quality
+pnpm generate-icons  # PWA icons (only if modifying app icon)
 ```
 
 All commands should pass without errors.
@@ -161,11 +144,9 @@ All commands should pass without errors.
 ### Common Gotchas
 
 **Problem:** `pnpm: command not found`
-
 - **Solution:** `npm install -g pnpm` and restart terminal
 
 **Problem:** `Node.js version is too old`
-
 - **Solution:** Use `nvm` or `fnm` to install Node.js 20+
   ```bash
   nvm install 20
@@ -173,25 +154,56 @@ All commands should pass without errors.
   ```
 
 **Problem:** `ModuleNotFoundError` after git pull
-
-- **Solution:** Dependencies may have changed
-  ```bash
-  pnpm install
-  ```
+- **Solution:** `pnpm install`
 
 **Problem:** Hot reload not working
-
-- **Solution:** Clear Next.js cache and restart dev server
+- **Solution:** Clear Next.js cache and restart
   ```bash
   rm -rf .next
   pnpm dev
   ```
 
 **Problem:** TypeScript errors in IDE but `pnpm build` passes
+- **Solution:** Restart TypeScript server — `Ctrl+Shift+P` → `TypeScript: Restart TS Server`
 
-- **Solution:** Restart TypeScript server in VS Code
-  - Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
-  - Type `TypeScript: Restart TS Server`
+---
+
+## Git Hooks & Quality Gates
+
+This project uses [Husky](https://typicode.github.io/husky/) to enforce quality gates locally. Hooks are installed automatically when you run `pnpm install`.
+
+**You should never need to configure anything manually.** The hooks run silently in the background on every commit and push.
+
+### pre-commit
+
+Runs [lint-staged](https://github.com/lint-staged/lint-staged) before every commit. Only staged `.ts` and `.tsx` files are checked — keeping it fast regardless of codebase size.
+
+What it does:
+- Runs ESLint and auto-fixes any fixable issues
+- Runs Prettier and auto-formats the file
+
+If either fails with unfixable errors, the commit is blocked. Fix the reported errors and try again.
+
+### commit-msg
+
+Validates your commit message against [Conventional Commits](https://www.conventionalcommits.org/) using `commitlint`. If the format is wrong, the commit is rejected immediately with a clear error.
+
+See [Commit Conventions](#commit-conventions) for the full format spec.
+
+### pre-push
+
+Runs `pnpm build` before every push. If the build fails, the push is blocked.
+
+This is the hard gate — broken code must never reach the remote. Fix all build and type errors locally before pushing.
+
+### Bypassing Hooks (emergency only)
+
+```bash
+git commit --no-verify -m "chore: emergency fix"
+git push --no-verify
+```
+
+Use `--no-verify` only when absolutely necessary. CI will still enforce all checks on the remote.
 
 ---
 
@@ -199,7 +211,7 @@ All commands should pass without errors.
 
 ### Atomic Design Pattern
 
-Components are organized by complexity, not by feature. This enables reusability across pages:
+Components are organized by complexity, not by feature:
 
 ```
 components/
@@ -215,24 +227,7 @@ components/
 
 Smallest building blocks — typically map 1:1 to a single UI concept.
 
-**Examples:**
-
-- `Button.tsx` — Pressable element with variants
-- `Input.tsx` — Text input field
-- `Badge.tsx` — Status indicator
-- `Text.tsx` — Typography wrapper
-
-**File structure:**
-
-```
-components/atoms/
-├── Button.tsx
-├── Input.tsx
-├── Badge.tsx
-└── Text.tsx
-```
-
-**Import:**
+**Examples:** `Button.tsx`, `Input.tsx`, `Badge.tsx`, `Text.tsx`
 
 ```tsx
 import { Button } from '@/components/atoms/Button';
@@ -242,62 +237,25 @@ import { Button } from '@/components/atoms/Button';
 
 Combinations of atoms forming distinct UI units.
 
-**Examples:**
-
-- `Card.tsx` — Container combining flexible layout
-- `FormField.tsx` — Label + Input + Error message
-- `BlogCard.tsx` — Image + Title + Excerpt + Link
-
-**File structure:**
-
-```
-components/molecules/
-├── Card.tsx
-├── FormField.tsx
-└── BlogCard.tsx
-```
+**Examples:** `Card.tsx`, `FormField.tsx`, `BlogCard.tsx`
 
 #### Organisms
 
 Complex sections combining atoms and molecules — usually feature-specific.
 
-**Examples:**
-
-- `Header.tsx` — Navigation + Logo + User menu
-- `WalletConnectionStep/` — Freighter integration + balance display
-- `ComparisonTable.tsx` — Sortable data table
-
-**File structure:**
-
-```
-components/organisms/
-├── Header/
-│   ├── Header.tsx
-│   ├── Navigation.tsx
-│   └── UserMenu.tsx
-├── WalletConnectionStep/
-│   └── WalletConnectionStep.tsx
-└── ComparisonTable.tsx
-```
+**Examples:** `Header.tsx`, `WalletConnectionStep/`, `ComparisonTable.tsx`
 
 #### Templates
 
 Page-level structural layouts — typically one per major page type.
 
-**Examples:**
-
-- `DashboardLayout.tsx` — Sidebar + Content area
-- `BlogPageTemplate.tsx` — Featured post + Grid + Pagination
-
 **Location:** `components/templates/`
 
 #### UI (shadcn/ui Base Components)
 
-These are provided by shadcn/ui and should not be edited directly unless extending with Stellar variants.
+Provided by shadcn/ui. Do not edit directly unless extending with Stellar variants.
 
 **Location:** `components/ui/`
-
-**Important:** Only import directly; don't re-export from atoms.
 
 ### Design Hierarchy
 
@@ -325,69 +283,32 @@ stellar-app-os/
 │   ├── layout.tsx            # Root layout
 │   ├── page.tsx              # Home page
 │   ├── api/                  # API routes
-│   │   ├── health/           # Health check endpoint
-│   │   ├── wallet/           # Wallet operations
-│   │   └── transaction/      # Transaction handling
 │   ├── dashboard/            # Dashboard pages
-│   │   └── credits/          # Credits management page
 │   ├── credits/              # Credit features
-│   │   ├── purchase/         # Purchase page
-│   │   └── compare/          # Comparison tool page
 │   └── settings/             # User settings
-├── components/               # All UI components
-│   ├── atoms/                # Base elements
-│   ├── molecules/            # Component groups
-│   ├── organisms/            # Feature sections
-│   ├── templates/            # Page layouts
-│   ├── providers/            # Context providers
-│   └── ui/                   # shadcn/ui base
+├── components/               # All UI components (atomic design)
 ├── contexts/                 # React contexts
-│   └── WalletContext.tsx     # Wallet state management
 ├── hooks/                    # Custom React hooks
-│   └── useWallet.ts          # Wallet operations hook
-├── lib/                      # Utility functions
-│   ├── stellar/              # Stellar SDK wrappers
-│   │   ├── wallet.ts         # Wallet utilities
-│   │   ├── signing.ts        # Transaction signing
-│   │   └── transaction.ts    # Transaction utils
-│   ├── types/                # TypeScript type definitions
-│   ├── utils/                # General utilities
-│   ├── api/                  # API client utilities
-│   ├── schemas/              # Zod validation schemas
-│   └── analytics.ts          # Analytics utilities
-├── public/                   # Static assets
-│   ├── manifest.json         # PWA manifest
-│   ├── sw.js                 # Service worker
-│   └── icons/                # App icons
+├── lib/                      # Utilities, types, schemas, API clients
+├── public/                   # Static assets, PWA manifest, icons
 └── scripts/                  # Build and utility scripts
-    └── generate-icons.mjs    # PWA icon generator
 ```
 
 ### Import Convention
 
-**Rule:** Always import directly from the component file. Never use barrel exports (index.ts).
-
-**Correct:**
+Always import directly from the component file. Never use barrel exports (`index.ts`).
 
 ```tsx
+// ✅ Correct
 import { Button } from '@/components/atoms/Button';
-import { Card, CardHeader } from '@/components/molecules/Card';
 import { useWallet } from '@/hooks/useWallet';
-```
 
-**Wrong:**
-
-```tsx
-// ❌ Do not use barrel exports
+// ❌ Wrong
 import { Button } from '@/components/atoms';
 import { useWallet } from '@/hooks';
 ```
 
-### Why This Matters
-
-- **Faster builds** — Explicit imports enable better tree-shaking
-- **Clear dependencies** — Understanding what a file imports is immediate
-- **Easier refactoring** — Moving files doesn't break wildcard imports
+Why: explicit imports enable better tree-shaking, clearer dependencies, and easier refactoring.
 
 ---
 
@@ -397,39 +318,19 @@ import { useWallet } from '@/hooks';
 
 This project uses TypeScript **strict mode**. No escape hatches.
 
-**Never use `any`:**
-
 ```tsx
 // ❌ Wrong
-const handleClick = (e: any) => {
-  console.log(e.target.value);
-};
+const handleClick = (e: any) => { ... };
 
 // ✅ Correct
-import { ChangeEvent, FC } from 'react';
-
-const handleClick = (e: ChangeEvent<HTMLInputElement>) => {
-  console.log(e.target.value);
-};
+const handleClick = (e: ChangeEvent<HTMLInputElement>) => { ... };
 ```
 
-**Never leave variables unused:**
-
-```tsx
-// ❌ Wrong
-const { unused, needed } = props;
-return <div>{needed}</div>;
-
-// ✅ Correct
-const { needed } = props;
-return <div>{needed}</div>;
-```
+Never leave variables unused. Never use `any`.
 
 ### Component Patterns
 
 #### Use `forwardRef` for DOM-forwarding Components
-
-If your component passes a ref to a DOM element, use `forwardRef`:
 
 ```tsx
 import { forwardRef, InputHTMLAttributes } from 'react';
@@ -439,136 +340,50 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
 }
 
-export const Input = forwardRef<HTMLInputElement, InputProps>(({ label, error, ...props }, ref) => (
-  <div>
-    <label>{label}</label>
-    <input ref={ref} {...props} />
-    {error && <span className="text-red-500">{error}</span>}
-  </div>
-));
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, ...props }, ref) => (
+    <div>
+      <label>{label}</label>
+      <input ref={ref} {...props} />
+      {error && <span className="text-red-500">{error}</span>}
+    </div>
+  )
+);
 
 Input.displayName = 'Input';
 ```
 
-#### Always Set `displayName`
-
-Required for debugging and React DevTools:
-
-```tsx
-export const MyComponent = forwardRef<HTMLDivElement, Props>((props, ref) => (
-  <div ref={ref} {...props} />
-));
-
-MyComponent.displayName = 'MyComponent';
-```
-
-#### Export Named Types
-
-Always export the props interface:
-
-```tsx
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary';
-  size?: 'sm' | 'md' | 'lg';
-}
-
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'primary', size = 'md', ...props }, ref) => (
-    <button ref={ref} className={`btn-${variant} btn-${size}`} {...props} />
-  )
-);
-
-Button.displayName = 'Button';
-```
+Always set `displayName`. Always export the props interface.
 
 ### Naming Conventions
 
-| Type                 | Convention                       | Example                                |
-| -------------------- | -------------------------------- | -------------------------------------- |
-| **Components**       | `PascalCase`                     | `WalletConnectionStep`, `DonationForm` |
-| **Folders**          | `kebab-case`                     | `wallet-connection`, `donation-form`   |
-| **Functions**        | `camelCase`                      | `handleSubmit`, `formatBalance`        |
-| **Variables**        | `camelCase`                      | `isLoading`, `accountBalance`          |
-| **Constants**        | `SCREAMING_SNAKE_CASE`           | `MAX_AMOUNT`, `API_BASE_URL`           |
-| **CSS Classes**      | `kebab-case`                     | `bg-stellar-blue`, `text-sm`           |
-| **Types/Interfaces** | `PascalCase`                     | `WalletBalance`, `TransactionDetails`  |
-| **Files**            | `kebab-case` (except components) | `use-wallet.ts`, `wallet-utils.ts`     |
+| Type                 | Convention                       | Example                          |
+| -------------------- | -------------------------------- | -------------------------------- |
+| **Components**       | `PascalCase`                     | `WalletConnectionStep`           |
+| **Folders**          | `kebab-case`                     | `wallet-connection`              |
+| **Functions**        | `camelCase`                      | `handleSubmit`, `formatBalance`  |
+| **Constants**        | `SCREAMING_SNAKE_CASE`           | `MAX_AMOUNT`, `API_BASE_URL`     |
+| **Types/Interfaces** | `PascalCase`                     | `WalletBalance`                  |
+| **Files**            | `kebab-case` (except components) | `use-wallet.ts`                  |
 
 ### Styling with Tailwind CSS + shadcn/ui
 
-#### Using Stellar Colors
-
-Always use Stellar color tokens defined in `app/globals.css`:
+Always use Stellar color tokens — never arbitrary Tailwind colors:
 
 ```tsx
 // ✅ Correct
-export const Header = () => (
-  <header className="bg-stellar-navy text-stellar-blue">
-    <h1>FarmCredit</h1>
-  </header>
-);
+<header className="bg-stellar-navy text-stellar-blue">
 
 // ❌ Wrong
-export const Header = () => (
-  <header className="bg-blue-600 text-blue-400">
-    <h1>FarmCredit</h1>
-  </header>
-);
+<header className="bg-blue-600 text-blue-400">
 ```
 
-#### Extending shadcn/ui Components
-
-shadcn/ui components in `components/ui/` provide base styles. Wrap them in atoms to add Stellar variants:
-
-```tsx
-// components/atoms/Button.tsx
-import { Button as BaseButton } from '@/components/ui/button';
-import { forwardRef, ButtonHTMLAttributes } from 'react';
-
-export const Button = forwardRef<
-  HTMLButtonElement,
-  ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant?: 'primary' | 'secondary';
-  }
->(({ variant = 'primary', ...props }, ref) => (
-  <BaseButton
-    ref={ref}
-    className={variant === 'primary' ? 'bg-stellar-blue' : 'bg-stellar-purple'}
-    {...props}
-  />
-));
-
-Button.displayName = 'Button';
-```
-
-#### Use `cn()` for Conditional Classes
-
-The `cn()` utility merges class names while respecting Tailwind precedence:
+Use `cn()` for conditional classes:
 
 ```tsx
 import { cn } from '@/lib/utils';
 
-export const Card = ({ className, ...props }: any) => (
-  <div className={cn('rounded-lg border bg-white p-4 shadow', className)} {...props} />
-);
-```
-
-### Code Quality Checks
-
-Before committing, ensure all checks pass:
-
-```bash
-# Type checking
-pnpm build
-
-# Linting and formatting
-pnpm lint
-```
-
-Fix issues automatically when possible:
-
-```bash
-pnpm lint --fix
+<div className={cn('rounded-lg border p-4', className)} />
 ```
 
 ---
@@ -577,70 +392,49 @@ pnpm lint --fix
 
 This project enforces **Conventional Commits** and **atomic commits**. Every commit must be meaningful, buildable, and revertable.
 
+The `commit-msg` hook will reject any commit that doesn't match the format below.
+
 ### Commit Message Format
 
 ```
 <type>(<scope>): <short description>
 
-[optional body describing WHY and HOW]
+[optional body — explain WHY and HOW]
 
-[optional footer with breaking changes or issue references]
+[optional footer — breaking changes or issue refs]
 ```
 
 ### Allowed Types
 
-| Type         | When to use                            | Example                                            |
-| ------------ | -------------------------------------- | -------------------------------------------------- |
-| **feat**     | New feature or component               | `feat(wallet): add Stellar wallet connection`      |
-| **fix**      | Bug fix                                | `fix(donation): correct minimum amount validation` |
-| **docs**     | Documentation only                     | `docs(contributing): add commit guidelines`        |
-| **style**    | Formatting, no logic change            | `style(button): adjust padding with Prettier`      |
-| **refactor** | Code restructuring, no behavior change | `refactor(dashboard): extract tab components`      |
-| **perf**     | Performance improvement                | `perf(list): memoize comparison table rows`        |
-| **test**     | Adding or updating tests               | `test(wallet): add connection flow tests`          |
-| **build**    | Build system or dependency changes     | `build(deps): upgrade Next.js to 16.1.6`           |
-| **ci**       | CI configuration changes               | `ci: add GitHub Actions workflow`                  |
-| **chore**    | Maintenance tasks                      | `chore: update .gitignore`                         |
+| Type         | When to use                            |
+| ------------ | -------------------------------------- |
+| `feat`       | New feature or component               |
+| `fix`        | Bug fix                                |
+| `docs`       | Documentation only                     |
+| `style`      | Formatting, no logic change            |
+| `refactor`   | Code restructuring, no behavior change |
+| `perf`       | Performance improvement                |
+| `test`       | Adding or updating tests               |
+| `build`      | Build system or dependency changes     |
+| `ci`         | CI configuration changes               |
+| `chore`      | Maintenance tasks                      |
 
 ### Allowed Scopes
 
-Scopes organize commits by feature area. Use one of:
+`auth` · `wallet` · `dashboard` · `marketplace` · `admin` · `donation` · `carbon` · `ui` · `layout` · `nav` · `config` · `deps`
 
-- `auth` — Authentication features
-- `wallet` — Wallet integration (Freighter, connections)
-- `dashboard` — Dashboard pages and layout
-- `marketplace` — Marketplace/comparison features
-- `admin` — Admin-only features
-- `donation` — Donation flows
-- `carbon` — Carbon credit features
-- `ui` — UI components (atoms, molecules, organisms)
-- `layout` — Layout and page structure
-- `nav` — Navigation components
-- `config` — Configuration files
-- `deps` — Dependencies and package management
-
-### Commit Message Examples
+### Examples
 
 ```bash
-# Good feature commit
-feat(wallet): add wallet balance display component
-
-# Good fix commit
-fix(donation): correct decimal validation for amount input
-
-# Good docs commit
-docs(contributing): add branching strategy section
-
-# Good refactor commit
-refactor(dashboard): extract credit cards into separate component
-
-# Good chore commit
-chore(deps): update TypeScript to 5.3.3
+feat(wallet): add freighter connection flow
+fix(auth): handle expired session tokens
+docs(config): update environment variable reference
+chore(deps): upgrade TypeScript to 5.3.3
 ```
 
-### Using the Commit Message Template
+### Commit Message Template
 
-To help you follow these conventions, we provide a `.gitmessage` template in the root of the repository. To configure Git to use it for all commits in this repository, run:
+Configure Git to use the provided template:
 
 ```bash
 git config commit.template .gitmessage
@@ -648,121 +442,33 @@ git config commit.template .gitmessage
 
 ### Atomic Commit Rules
 
-These rules ensure your commits are safe and reviewable:
-
 #### Rule 1: One Concern Per Commit
 
-Never mix unrelated changes:
-
 ```bash
-# ❌ Bad — mixes feature, fix, and styling
+# ❌ Bad
 feat: add dashboard with tabs, fix header bug, update colors
 
-# ✅ Good — separate commits
+# ✅ Good
 feat(dashboard): create page layout
-feat(dashboard): add navigation tabs
 fix(header): correct active link highlighting
-style(colors): update Stellar token usage
 ```
 
 #### Rule 2: Each Commit Must Build
 
-Every single commit in history must pass:
-
-```bash
-pnpm build && pnpm lint
-```
-
-This means:
-
-- No temporary debugging code
-- All files must type-check
-- No unused imports or variables
+Every commit in history must pass `pnpm build && pnpm lint`. No debugging code, no unused imports.
 
 #### Rule 3: Each Commit Must Be Revertable
 
-Reverting one commit must not break unrelated features:
+Reverting one commit must not break unrelated features. Build in logical order: foundation → features → polish.
 
-```bash
-# ❌ Bad — commit 2 depends on commit 1
-# Commit 1: feat(ui): create Button atom
-# Commit 2: feat(wallet): use Button in wallet module
-# If someone reverts commit 1, commit 2 breaks
-
-# ✅ Good — clean build at each step
-# Commit 1: feat(ui): create Button atom with base styles
-# Commit 2: feat(wallet): create wallet module
-# Commit 3: feat(wallet): integrate Button component
-```
-
-#### Rule 4: Order Matters
-
-Build commits in logical order:
-
-1. **Foundation** — utilities, types, base components
-2. **Features** — pages, sections using the foundation
-3. **Polish** — styling refinements, performance
-
-**Example good sequence:**
-
-```
-1. feat(ui): add Button atom component
-2. feat(ui): add Card molecule component
-3. feat(dashboard): create dashboard layout
-4. feat(dashboard): add overview tab
-5. feat(dashboard): add donations tab
-6. style(dashboard): align spacing and padding
-```
-
-**Example bad sequence:**
-
-```
-1. feat(dashboard): create full dashboard with all tabs and styling
-2. refactor: extract components into separate files
-```
-
-### How to Create Atomic Commits
-
-#### Step 1: Stage Only What You Need
+#### How to Stage Atomically
 
 ```bash
 # Stage specific files
 git add app/page.tsx
 
-# Or stage chunks interactively
-git add -p  # Choose hunks to stage
-```
-
-#### Step 2: Write Descriptive Message
-
-```bash
-git commit -m "feat(dashboard): create dashboard page layout"
-```
-
-Include a body explaining WHY if not obvious:
-
-```bash
-git commit -m "fix(donation): correct amount validation logic
-
-The minimum donation amount wasn't being enforced during form
-submission. Added decimal validation using Zod schema before
-API call.
-
-Fixes #42"
-```
-
-#### Step 3: Verify Build
-
-```bash
-pnpm build
-pnpm lint
-```
-
-#### Step 4: Repeat for Next Logical Unit
-
-```bash
-git add components/molecules/DashboardCard.tsx
-git commit -m "feat(dashboard): add dashboard card component"
+# Or stage interactively by hunk
+git add -p
 ```
 
 ---
@@ -771,221 +477,92 @@ git commit -m "feat(dashboard): add dashboard card component"
 
 ### Before You Start
 
-1. **Branch from `main`:**
-
-   ```bash
-   git checkout main
-   git pull origin main
-   git checkout -b feat/<issue-number>-<short-description>
-   ```
-
-2. **Branch Naming Convention:**
-
-   ```
-   feat/<issue-number>-<short-description>
-   fix/<issue-number>-<short-description>
-   docs/<issue-number>-<short-description>
-   ```
-
-   **Examples:**
-   - `feat/42-wallet-connection-modal`
-   - `fix/78-donation-validation-bug`
-   - `docs/107-contributor-guide`
-
-### Before Submitting PR
-
-Ensure everything is ready:
-
 ```bash
-# Update to latest main
 git checkout main
 git pull origin main
-git checkout <your-branch>
-git rebase main
-
-# Verify all checks pass
-pnpm build          # Type checking
-pnpm lint           # Linting
+git checkout -b feat/<issue-number>-<short-description>
 ```
 
-Fix any issues:
+**Branch naming:**
+- `feat/42-wallet-connection-modal`
+- `fix/78-donation-validation-bug`
+- `docs/107-contributor-guide`
+
+### Before Submitting
 
 ```bash
-pnpm lint --fix     # Auto-fix formatting
+git rebase main       # Rebase onto latest main
+pnpm build            # Must pass
+pnpm lint             # Must pass
 ```
 
-### Recording Your Implementation
+### Screen Recording Requirement
 
-**Important:** Every PR must include a screen recording demonstrating your implementation working.
+**Every PR must include a screen recording** showing your feature working.
 
-#### How to Record
+- **macOS:** `Cmd+Shift+5` → Record Selected Portion
+- **Windows/Linux:** OBS Studio (https://obsproject.com) or built-in recorder
 
-**macOS:**
+Show: the relevant page loading → user interaction → expected result. 30-60 seconds is ideal.
 
-- Press `Cmd+Shift+5`
-- Select "Record Selected Portion"
-- Record your feature in action
-- File saves to Desktop
-
-**Windows/Linux:**
-
-- Use OBS Studio (free): https://obsproject.com
-- Or built-in screen recorder
-
-#### What to Show
-
-Record a workflow covering:
-
-1. **Loading** — Start at the relevant page
-2. **Interaction** — Use your feature as a user would
-3. **Result** — Show the expected outcome
-
-**Example:** For a wallet connection feature:
-
-```
-1. Click "Connect Wallet" button
-2. Freighter popup opens and user approves
-3. Wallet address displays in header
-4. Balance loads and updates
-```
-
-**Duration:** 30-60 seconds is ideal
-
-### Submitting Your PR
-
-1. **Push your branch:**
-
-   ```bash
-   git push origin <your-branch>
-   ```
-
-2. **Open PR on GitHub:**
-   - Click "Compare & pull request"
-   - Fill out the template completely (see below)
-   - Attach your screen recording
-
-3. **PR Template Walkthrough:**
+### PR Template
 
 ```markdown
 ## Summary
-
-<!-- 1-3 sentences: What does this PR do and why? -->
-
-Implements wallet connection modal allowing users to connect
-Freighter wallet. This unblocks the wallet integration feature.
+<!-- 1-3 sentences: what does this PR do and why? -->
 
 ## Related Issue
-
-Closes #42
+Closes #<issue-number>
 
 ## What Was Implemented
-
-<!-- Detailed checklist of changes -->
-
-- [x] WalletConnectionStep component created
-- [x] Freighter API integration
-- [x] Error handling for failed connections
-- [x] Success toast notification
-- [x] Mobile responsive design
-- [x] Accessibility attributes (aria-labels)
+- [ ] ...
 
 ## Implementation Details
-
-<!-- Key technical decisions and patterns -->
-
-- Used Freighter API (via @stellar/freighter-api)
-- Implemented error boundaries for connection failures
-- Stored wallet address in React Context for app-wide access
-- Uses Stellar color tokens for styling consistency
+<!-- Key technical decisions -->
 
 ## How to Test
-
-1. Checkout this branch: `git checkout feat/42-...`
-2. Install and run: `pnpm install && pnpm dev`
-3. Navigate to home page
-4. Click "Connect Wallet" button
-5. Approve connection in Freighter popup
-6. Verify wallet address appears in header
-7. Test on mobile (DevTools > Toggle device toolbar)
+1. Checkout branch
+2. pnpm install && pnpm dev
+3. Steps to reproduce the feature
 
 ## Screenshots / Recording
-
-[Attach screen recording here]
+[Attach here]
 ```
 
 ### PR Requirements
 
 Every PR **must** have:
 
-- ✅ **Linked issue** — Use `Closes #<issue-number>` in description
-- ✅ **Screen recording** — Attached to PR showing feature working
-- ✅ **Filled PR template** — All sections completed
-- ✅ **Passing CI** — All checks green (build, lint, types)
-- ✅ **Atomic commits** — Each commit can stand alone
+- ✅ Linked issue (`Closes #<number>`)
+- ✅ Screen recording attached
+- ✅ Filled PR template
+- ✅ Passing CI (build, lint, types)
+- ✅ Atomic commits
 
 **PRs missing a screen recording or linked issue will not be reviewed.**
 
-### Review Expectations & Timeline
+### Review Timeline
 
-After submitting:
-
-- ⏱️ **24-48 hours** — Expect initial review feedback
-- 💬 **Respond to all comments** — Either make changes or explain decisions
-- 🔄 **Re-request review** — After addressing feedback
-- ✅ **Automatic merge** — Maintainer merges once approved + CI passes
-
-### What "Recording Implementation at the PR" Means
-
-Each PR includes a video showing your feature working. This is **important** because:
-
-1. **Proof of functionality** — Reviewers can see it works without running code
-2. **Faster reviews** — No setup needed to understand what changed
-3. **Documentation** — Recording becomes part of the PR history
-
-The recording should show:
-
-- Real browser window (not just terminal)
-- Your feature being used as a real user would
-- Any user interactions (clicks, form fills, etc.)
-- Final result clearly visible
+- ⏱️ 24-48 hours for initial feedback
+- Respond to all comments — make changes or explain decisions
+- Re-request review after addressing feedback
 
 ---
 
 ## Issue Workflow
 
-### How to Pick an Issue
+1. Browse [open issues](https://github.com/Farm-credit/stellar-app-os/issues)
+2. Look for labels: `Stellar Wave`, `good-first-issue`, `help-wanted`
+3. Check comments to confirm it's unclaimed
+4. Comment `I'll work on this` to claim it
 
-1. **Browse [open issues](https://github.com/Farm-credit/stellar-app-os/issues)**
-2. **Look for labels:** `Stellar Wave`, `good-first-issue`, `help-wanted`
-3. **Check if it's claimed:** Read comments to see if someone else is working on it
-4. **Claim it:** Comment `I'll work on this` or `Assigned to me`
-
-**Do not start work on an issue someone else has claimed without coordinating.**
-
-### How to Signal You're Working on It
-
-Comment on the issue:
-
-```
-Hey! I'd like to work on this. I'll implement [brief summary].
-```
-
-This prevents duplicate work and shows maintainers you're engaged.
+Don't start work on an issue someone else has claimed without coordinating first.
 
 ### When to Ask for Help
 
-Don't wait until you're stuck. Ask questions:
-
-1. **In the issue:** Comment with specific questions
-2. **On Discord/Slack:** If available in the repo
-3. **In PR:** Ask during review if something wasn't clear
-
-Clear indicators you should ask:
-
-- ❓ Unsure about expected behavior
-- 🤔 Conflicting requirements
-- 🛠️ Need architectural guidance
-- 🔌 Integrating a new library
+- Unsure about expected behavior → comment on the issue
+- Need architectural guidance → ask in the PR
+- Conflicting requirements → raise it early, not at review time
 
 ---
 
@@ -993,123 +570,37 @@ Clear indicators you should ask:
 
 ### What Reviewers Look For
 
-Reviewers evaluate PRs based on these criteria:
-
-#### Code Quality
-
-- ✅ Follows project conventions (naming, import style, patterns)
-- ✅ No `any` types or unused variables
-- ✅ Uses `forwardRef`, `displayName` where appropriate
-- ✅ Proper TypeScript types exported
-
-#### Architecture
-
-- ✅ Atomic design pattern followed (atoms → molecules → organisms)
-- ✅ Components are reusable, not feature-specific
-- ✅ No circular dependencies
-- ✅ Clear separation of concerns
-
-#### Styling
-
-- ✅ Uses Stellar color tokens, not arbitrary colors
-- ✅ Responsive design (mobile-first)
-- ✅ Tailwind classes organized logically
-- ✅ No inline styles
-
-#### Testing
-
-- ✅ Feature works as described in PR
-- ✅ No console errors or warnings
-- ✅ All builds pass (`pnpm build`, `pnpm lint`)
-- ✅ Screen recording shows working implementation
-
-#### Documentation
-
-- ✅ Commits are atomic and descriptive
-- ✅ PR description explains what and why
-- ✅ Code comments for complex logic
-- ✅ No commented-out code left behind
+- No `any` types or unused variables
+- `forwardRef` + `displayName` where appropriate
+- Atomic design pattern followed
+- Stellar color tokens used (no arbitrary colors)
+- Responsive design (mobile-first)
+- Atomic, descriptive commits
+- Screen recording attached
 
 ### How to Respond to Feedback
 
-#### Requested Changes (Required)
+1. Read every comment carefully
+2. Respond to all of them — even if you disagree
+3. Push fixes, then reply `Done` or `Fixed in <sha>`
+4. Re-request review
 
-Must be addressed:
-
-```
-Reviewer: "This component doesn't have a displayName"
-Author: "Good catch! Adding displayName now." [makes change]
-```
-
-#### Suggestions (Optional)
-
-Can address now or in follow-up:
-
-```
-Reviewer: "Consider extracting this into a separate component"
-Author: "I think it's small enough for now, but noted for future!"
-```
-
-#### Questions (Clarify)
-
-Always respond:
-
-```
-Reviewer: "Why did you use Context instead of props?"
-Author: "Good question. Context needed for deep nesting in
-the dashboard and performance advantages. Considered props
-drilling but it would go 5 levels deep."
-```
-
-#### Process
-
-1. **Read comment carefully** — Understand the concern
-2. **Respond to every comment** — Even if you disagree
-3. **Make necessary changes** — Push commits
-4. **Mark as resolved** — Reply `Done` or `Fixed in abc123`
-5. **Re-request review** — Maintainer notified to review again
-
-### Common Reviewer Comments & How to Handle
-
-| Comment                     | What It Means         | How to Respond                                                                                               |
-| --------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| "This has an `any` type"    | TypeScript not strict | Replace with proper type: `HTMLInputElement`, `ChangeEvent<HTMLInputElement>`, etc.                          |
-| "Missing displayName"       | Component debugging   | Add: `Component.displayName = "ComponentName"`                                                               |
-| "Use atomic import"         | Fix import style      | Change `import { Button } from "@/components/atoms"` to `import { Button } from "@/components/atoms/Button"` |
-| "This should be a molecule" | Architecture concern  | Move component to `molecules/` folder and update imports                                                     |
-| "No arbitrary colors"       | Styling consistency   | Replace `bg-blue-500` with `bg-stellar-blue`                                                                 |
-| "Screen recording missing"  | PR requirement        | Record yourself using the feature and upload MP4                                                             |
-
----
-
-## Acceptance Criteria Checklist
-
-Before you open a PR, verify all of these are true:
-
-- [ ] **CONTRIBUTING.md exists** at repo root
-- [ ] **Local setup works** — `git clone`, `pnpm install`, `pnpm dev` (no questions needed)
-- [ ] **All sections included** — Welcome, Prerequisites, Setup, Architecture, Standards, Commits, PR Process, Issues, Review Guidelines
-- [ ] **Examples are copy-paste ready** — Exact commands, file paths, code snippets
-- [ ] **Atomic design documented** — Clear folder structure with use cases
-- [ ] **Conventional Commits documented** — Allowed types and scopes with examples
-- [ ] **Atomic commit rules documented** — Good/bad examples
-- [ ] **PR process explained** — Including screen recording requirement
-- [ ] **Branch naming documented** — With examples
-- [ ] **PR template walkthrough included** — All sections explained
-- [ ] **Code review guidelines included** — What reviewers look for, how to respond
-- [ ] **No grammatical errors** — Professional tone throughout
-- [ ] **All internal links work** — Links to files, sections, GitHub issues
+| Comment                    | How to Respond                                                  |
+| -------------------------- | --------------------------------------------------------------- |
+| "This has an `any` type"   | Replace with proper type (`HTMLInputElement`, etc.)             |
+| "Missing displayName"      | Add `Component.displayName = "ComponentName"`                   |
+| "Use atomic import"        | Change to direct file import                                    |
+| "No arbitrary colors"      | Replace `bg-blue-500` with `bg-stellar-blue`                    |
+| "Screen recording missing" | Record feature in browser and upload MP4                        |
 
 ---
 
 ## Getting Help
 
-**Stuck?** Here's where to ask:
-
 - 📝 **General questions:** Comment in the relevant issue
-- 🐛 **Found a bug:** Open a new issue with reproduction steps
-- 💡 **Feature idea:** Discuss in issue before implementing
-- 🤝 **Contributing questions:** Ask in issues or pull request comments
+- 💬 **Found a bug:** Open a new issue with reproduction steps
+- 🔄 **Feature idea:** Discuss in an issue before implementing
+- 🤔 **Contributing questions:** Ask in issues or PR comments
 
 ---
 
