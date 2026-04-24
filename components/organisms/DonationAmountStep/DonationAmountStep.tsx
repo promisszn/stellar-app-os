@@ -8,12 +8,14 @@ import { Input } from '@/components/atoms/Input';
 import { Badge } from '@/components/atoms/Badge';
 import { ProgressStepper } from '@/components/molecules/ProgressStepper/ProgressStepper';
 import { useDonationContext } from '@/contexts/DonationContext';
-import { Trees, Mountain, Leaf } from 'lucide-react';
+import { Trees, Mountain, Leaf, Sprout } from 'lucide-react';
 import {
   MINIMUM_DONATION,
   TREES_PER_DOLLAR,
   HECTARES_PER_DOLLAR,
   CO2_PER_DOLLAR,
+  REPLANTING_BUFFER_PERCENT,
+  calculateDonationAllocation,
   formatCurrency,
   formatNumber,
 } from '@/lib/constants/donation';
@@ -66,6 +68,8 @@ export function DonationAmountStep() {
 
   // Handle extremely large amounts (cap display at reasonable values)
   const safeAmount = Math.min(currentAmount, 1000000);
+
+  const allocation = calculateDonationAllocation(safeAmount);
 
   const impact = {
     trees: Math.round(safeAmount * TREES_PER_DOLLAR),
@@ -139,10 +143,11 @@ export function DonationAmountStep() {
                 onClick={() => handleQuickSelect(amount)}
                 variant={selectedAmount === amount && !isCustom ? 'default' : 'outline'}
                 size="lg"
-                className={`relative p-6 h-auto ${selectedAmount === amount && !isCustom
+                className={`relative p-6 h-auto ${
+                  selectedAmount === amount && !isCustom
                     ? 'border-stellar-blue bg-stellar-blue/10 text-stellar-blue hover:bg-stellar-blue/20'
                     : ''
-                  }`}
+                }`}
                 aria-pressed={selectedAmount === amount && !isCustom}
                 aria-label={`Select ${formatCurrency(amount)} donation`}
               >
@@ -163,10 +168,11 @@ export function DonationAmountStep() {
               onClick={handleCustomClick}
               variant={isCustom ? 'default' : 'outline'}
               size="lg"
-              className={`relative p-6 h-auto ${isCustom
+              className={`relative p-6 h-auto ${
+                isCustom
                   ? 'border-stellar-blue bg-stellar-blue/10 text-stellar-blue hover:bg-stellar-blue/20'
                   : ''
-                }`}
+              }`}
               aria-pressed={isCustom}
               aria-label="Enter custom donation amount"
             >
@@ -228,12 +234,14 @@ export function DonationAmountStep() {
               role="switch"
               aria-checked={isMonthly}
               aria-label="Make this a monthly recurring donation"
-              className={`relative w-12 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-green focus:ring-offset-2 ${isMonthly ? 'bg-stellar-green' : 'bg-gray-300'
-                }`}
+              className={`relative w-12 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-green focus:ring-offset-2 ${
+                isMonthly ? 'bg-stellar-green' : 'bg-gray-300'
+              }`}
             >
               <span
-                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isMonthly ? 'translate-x-6' : ''
-                  }`}
+                className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                  isMonthly ? 'translate-x-6' : ''
+                }`}
               />
             </button>
           </div>
@@ -323,6 +331,41 @@ export function DonationAmountStep() {
                 </div>
               </div>
             </div>
+
+            {/* Replanting Buffer Fund Breakdown */}
+            {safeAmount > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sprout className="w-4 h-4 text-amber-600" aria-hidden="true" />
+                  <Text className="text-sm font-semibold text-amber-800">Donation Allocation</Text>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Text className="text-sm text-amber-700">Tree planting (70%)</Text>
+                    <Text className="text-sm font-semibold text-amber-900">
+                      {formatCurrency(allocation.planting)}
+                    </Text>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <Text className="text-sm text-amber-700">
+                      Replanting buffer ({Math.round(REPLANTING_BUFFER_PERCENT * 100)}%)
+                    </Text>
+                    <Text className="text-sm font-semibold text-amber-900">
+                      {formatCurrency(allocation.buffer)}
+                    </Text>
+                  </div>
+                  <div className="border-t border-amber-200 pt-2 flex justify-between items-center">
+                    <Text className="text-sm font-semibold text-amber-800">Total</Text>
+                    <Text className="text-sm font-bold text-amber-900">
+                      {formatCurrency(allocation.total)}
+                    </Text>
+                  </div>
+                </div>
+                <Text className="text-xs text-amber-600">
+                  The buffer fund covers tree failures and ensures survival rate targets are met.
+                </Text>
+              </div>
+            )}
           </div>
         </div>
       </div>

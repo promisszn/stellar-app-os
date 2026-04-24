@@ -35,4 +35,9 @@ export interface BuildDonationTransactionRequest {
 export interface BuildDonationTransactionResponse {
   transactionXdr: string;
   networkPassphrase: string;
+  allocation: {
+    total: number;
+    planting: number;
+    buffer: number;
+  };
 }

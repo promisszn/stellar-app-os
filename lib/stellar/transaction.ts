@@ -2,6 +2,7 @@ import { Networks, TransactionBuilder, Asset, Operation, Memo } from '@stellar/s
 import { Horizon } from '@stellar/stellar-sdk';
 import type { NetworkType } from '@/lib/types/wallet';
 import type { CreditSelectionState } from '@/lib/types/carbon';
+import { calculateDonationAllocation } from '@/lib/constants/donation';
 
 const USDC_ISSUER_MAINNET = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
 const USDC_ISSUER_TESTNET = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
@@ -125,6 +126,9 @@ export async function submitTransaction(
   return result.hash;
 }
 
+// Replanting buffer fund address — receives 30% of each donation
+const REPLANTING_BUFFER_ADDRESS = 'GBUQWP3BOUZX34TOND2QV7QQ7K7VJTG6VSE62MFPXXXIAGKZ6YTDCXI';
+
 export async function buildDonationTransaction(
   amount: number,
   sourcePublicKey: string,
@@ -143,17 +147,29 @@ export async function buildDonationTransaction(
   const sourceAccount = await server.loadAccount(sourcePublicKey);
   const usdcAsset = getUsdcAsset(network);
 
-  const recipientAddress = 'GABEMKJNR4GK7M4FROGA7I7PG63N2CKE3EGDSBSISG56SVL2O3KRNDXA';
+  const plantingAddress = 'GABEMKJNR4GK7M4FROGA7I7PG63N2CKE3EGDSBSISG56SVL2O3KRNDXA';
+
+  // Split: 70% to planting, 30% to replanting buffer fund
+  const { planting, buffer } = calculateDonationAllocation(amount);
 
   const transaction = new TransactionBuilder(sourceAccount, {
     fee: '100',
     networkPassphrase,
   })
+    // 70% — direct tree planting
     .addOperation(
       Operation.payment({
-        destination: recipientAddress,
+        destination: plantingAddress,
         asset: usdcAsset,
-        amount: amount.toFixed(7),
+        amount: planting.toFixed(7),
+      })
+    )
+    // 30% — replanting buffer fund (covers tree failures, ensures survival targets)
+    .addOperation(
+      Operation.payment({
+        destination: REPLANTING_BUFFER_ADDRESS,
+        asset: usdcAsset,
+        amount: buffer.toFixed(7),
       })
     )
     .addMemo(Memo.text(`donate:${idempotencyKey.slice(0, 20)}`))

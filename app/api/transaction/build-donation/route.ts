@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { buildDonationTransaction } from '@/lib/stellar/transaction';
+import { calculateDonationAllocation } from '@/lib/constants/donation';
 import type { BuildDonationTransactionRequest } from '@/lib/types/donation-payment';
 
 export async function POST(request: Request) {
@@ -16,8 +17,9 @@ export async function POST(request: Request) {
     }
 
     const result = await buildDonationTransaction(amount, walletPublicKey, network, idempotencyKey);
+    const allocation = calculateDonationAllocation(amount);
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, allocation });
   } catch (error) {
     console.error('Error building donation transaction:', error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to build transaction';
