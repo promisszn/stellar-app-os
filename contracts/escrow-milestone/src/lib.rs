@@ -9,16 +9,23 @@
 //!   4. Remaining 25% stays locked until final milestone or dispute resolution
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, Env,
+    contract, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env, IntoVal,
 };
 
-// ── Storage keys ──────────────────────────────────────────────────────────────
-const ADMIN: &str    = "ADMIN";
-const ESCROW: &str   = "ESCROW";
-
-/// Percentage released on first milestone verification (basis points: 7500 = 75%)
-const MILESTONE_1_BPS: i128 = 7500;
+const MILESTONE_1_BPS: i128 = 7_500;
 const BPS_DENOM: i128       = 10_000;
+
+/// Soroban #[contracttype] does not support Option<BytesN<32>> directly.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum OptProof {
+    None,
+    Some(BytesN<32>),
+}
+
+impl OptProof {
+    pub fn is_some(&self) -> bool { matches!(self, OptProof::Some(_)) }
+}
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -32,13 +39,13 @@ pub enum EscrowStatus {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct EscrowState {
-    pub farmer:        Address,
-    pub funder:        Address,
-    pub token:         Address,
-    pub total_amount:  i128,
-    pub released:      i128,
-    pub status:        EscrowStatus,
-    pub verification_hash: Option<soroban_sdk::BytesN<32>>,
+    pub farmer:            Address,
+    pub funder:            Address,
+    pub token:             Address,
+    pub total_amount:      i128,
+    pub released:          i128,
+    pub status:            EscrowStatus,
+    pub verification_hash: OptProof,
 }
 
 #[contract]
@@ -46,7 +53,6 @@ pub struct EscrowMilestone;
 
 #[contractimpl]
 impl EscrowMilestone {
-    /// One-time init — sets the admin/verifier address.
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&symbol_short!("ADMIN")) {
             panic!("already initialized");
@@ -54,177 +60,108 @@ impl EscrowMilestone {
         env.storage().instance().set(&symbol_short!("ADMIN"), &admin);
     }
 
-    /// Funder deposits `amount` of `token` into escrow for `farmer`.
-    /// Creates a new escrow record keyed by farmer address.
-    pub fn deposit(
-        env: Env,
-        funder: Address,
-        farmer: Address,
-        token: Address,
-        amount: i128,
-    ) {
+    pub fn deposit(env: Env, funder: Address, farmer: Address, token: Address, amount: i128) {
         funder.require_auth();
+        if amount <= 0 { panic!("amount must be positive"); }
 
-        if amount <= 0 {
-            panic!("amount must be positive");
-        }
-
-        // Reject if escrow already active for this farmer
         let key = Self::escrow_key(&env, &farmer);
         if env.storage().persistent().has(&key) {
             panic!("active escrow already exists for this farmer");
         }
 
-        // Pull funds from funder into contract
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&funder, &env.current_contract_address(), &amount);
+        token::Client::new(&env, &token)
+            .transfer(&funder, &env.current_contract_address(), &amount);
 
-        let state = EscrowState {
+        env.storage().persistent().set(&key, &EscrowState {
             farmer:            farmer.clone(),
             funder,
             token,
             total_amount:      amount,
             released:          0,
             status:            EscrowStatus::Funded,
-            verification_hash: None,
-        };
+            verification_hash: OptProof::None,
+        });
 
-        env.storage().persistent().set(&key, &state);
-
-        env.events().publish(
-            (symbol_short!("deposit"), farmer),
-            amount,
-        );
+        env.events().publish((symbol_short!("deposit"), farmer), amount);
     }
 
-    /// Called by the admin/verifier after GPS + photo validation passes.
-    /// Releases 75% of escrowed funds instantly to the farmer wallet.
-    /// `verification_hash` is the SHA-256 of the submitted GPS + photo proof.
-    pub fn verify_milestone(
-        env: Env,
-        farmer: Address,
-        verification_hash: soroban_sdk::BytesN<32>,
-    ) {
+    pub fn verify_milestone(env: Env, farmer: Address, verification_hash: BytesN<32>) {
         Self::require_admin(&env);
 
         let key = Self::escrow_key(&env, &farmer);
-        let mut state: EscrowState = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("no escrow found for farmer");
+        let mut state: EscrowState = env.storage().persistent()
+            .get(&key).expect("no escrow found for farmer");
 
         if state.status != EscrowStatus::Funded {
             panic!("milestone already processed or escrow not in funded state");
         }
 
-        // Calculate 75% release
         let release_amount = (state.total_amount * MILESTONE_1_BPS) / BPS_DENOM;
 
-        // Transfer to farmer
-        let token_client = token::Client::new(&env, &state.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &state.farmer,
-            &release_amount,
-        );
+        token::Client::new(&env, &state.token)
+            .transfer(&env.current_contract_address(), &state.farmer, &release_amount);
 
         state.released          = release_amount;
         state.status            = EscrowStatus::Milestone1Released;
-        state.verification_hash = Some(verification_hash.clone());
+        state.verification_hash = OptProof::Some(verification_hash);
 
         env.storage().persistent().set(&key, &state);
-
-        env.events().publish(
-            (symbol_short!("m1release"), farmer),
-            release_amount,
-        );
+        env.events().publish((symbol_short!("m1release"), farmer), release_amount);
     }
 
-    /// Release remaining 25% after final milestone — called by admin.
     pub fn release_remainder(env: Env, farmer: Address) {
         Self::require_admin(&env);
 
         let key = Self::escrow_key(&env, &farmer);
-        let mut state: EscrowState = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("no escrow found for farmer");
+        let mut state: EscrowState = env.storage().persistent()
+            .get(&key).expect("no escrow found for farmer");
 
         if state.status != EscrowStatus::Milestone1Released {
             panic!("first milestone not yet verified");
         }
 
         let remainder = state.total_amount - state.released;
-        if remainder <= 0 {
-            panic!("nothing left to release");
-        }
+        if remainder <= 0 { panic!("nothing left to release"); }
 
-        let token_client = token::Client::new(&env, &state.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &state.farmer,
-            &remainder,
-        );
+        token::Client::new(&env, &state.token)
+            .transfer(&env.current_contract_address(), &state.farmer, &remainder);
 
         state.released += remainder;
         state.status    = EscrowStatus::Completed;
 
         env.storage().persistent().set(&key, &state);
-
-        env.events().publish(
-            (symbol_short!("complete"), farmer),
-            remainder,
-        );
+        env.events().publish((symbol_short!("complete"), farmer), remainder);
     }
 
-    /// Refund full amount to funder — only before any milestone is verified.
     pub fn refund(env: Env, farmer: Address) {
         Self::require_admin(&env);
 
         let key = Self::escrow_key(&env, &farmer);
-        let mut state: EscrowState = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("no escrow found for farmer");
+        let mut state: EscrowState = env.storage().persistent()
+            .get(&key).expect("no escrow found for farmer");
 
         if state.status != EscrowStatus::Funded {
             panic!("cannot refund after milestone release");
         }
 
-        let token_client = token::Client::new(&env, &state.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &state.funder,
-            &state.total_amount,
-        );
+        token::Client::new(&env, &state.token)
+            .transfer(&env.current_contract_address(), &state.funder, &state.total_amount);
 
         state.status = EscrowStatus::Refunded;
         env.storage().persistent().set(&key, &state);
-
-        env.events().publish(
-            (symbol_short!("refund"), farmer),
-            state.total_amount,
-        );
+        env.events().publish((symbol_short!("refund"), farmer), state.total_amount);
     }
 
-    /// Read escrow state for a farmer.
     pub fn get_escrow(env: Env, farmer: Address) -> Option<EscrowState> {
         env.storage().persistent().get(&Self::escrow_key(&env, &farmer))
     }
-
-    // ── internal ──────────────────────────────────────────────────────────────
 
     fn escrow_key(env: &Env, farmer: &Address) -> soroban_sdk::Val {
         (symbol_short!("ESCROW"), farmer.clone()).into_val(env)
     }
 
     fn require_admin(env: &Env) {
-        let admin: Address = env
-            .storage()
-            .instance()
+        let admin: Address = env.storage().instance()
             .get(&symbol_short!("ADMIN"))
             .expect("contract not initialized");
         admin.require_auth();
@@ -236,95 +173,329 @@ impl EscrowMilestone {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{
-        testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
-        token, Address, BytesN, Env,
-    };
+    use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env};
 
-    fn setup() -> (Env, Address, Address, Address, Address, EscrowMilestoneClient<'static>) {
+    struct Ctx {
+        env:      Env,
+        client:   EscrowMilestoneClient<'static>,
+        token:    Address,
+        funder:   Address,
+        farmer:   Address,
+        contract: Address,
+    }
+
+    fn setup() -> Ctx {
         let env = Env::default();
         env.mock_all_auths();
 
-        let contract_id = env.register_contract(None, EscrowMilestone);
-        let client      = EscrowMilestoneClient::new(&env, &contract_id);
+        let contract = env.register_contract(None, EscrowMilestone);
+        let client   = EscrowMilestoneClient::new(&env, &contract);
 
         let admin  = Address::generate(&env);
         let funder = Address::generate(&env);
         let farmer = Address::generate(&env);
 
-        // Deploy a test token
-        let token_id     = env.register_stellar_asset_contract(admin.clone());
-        let token_admin  = token::StellarAssetClient::new(&env, &token_id);
-        token_admin.mint(&funder, &10_000);
+        let token = env.register_stellar_asset_contract(admin.clone());
+        token::StellarAssetClient::new(&env, &token).mint(&funder, &10_000);
 
         client.initialize(&admin);
-
-        (env, admin, funder, farmer, token_id, client)
+        Ctx { env, client, token, funder, farmer, contract }
     }
 
     fn dummy_hash(env: &Env) -> BytesN<32> {
         BytesN::from_array(env, &[1u8; 32])
     }
 
-    #[test]
-    fn test_deposit_and_verify_milestone() {
-        let (env, _admin, funder, farmer, token, client) = setup();
-
-        client.deposit(&funder, &farmer, &token, &10_000);
-
-        let state = client.get_escrow(&farmer).unwrap();
-        assert_eq!(state.total_amount, 10_000);
-        assert_eq!(state.status, EscrowStatus::Funded);
-
-        client.verify_milestone(&farmer, &dummy_hash(&env));
-
-        let state = client.get_escrow(&farmer).unwrap();
-        // 75% of 10_000 = 7_500 released
-        assert_eq!(state.released, 7_500);
-        assert_eq!(state.status, EscrowStatus::Milestone1Released);
+    fn balance(env: &Env, token: &Address, who: &Address) -> i128 {
+        token::Client::new(env, token).balance(who)
     }
 
+    // ── Full lifecycle with balance assertions ────────────────────────────────
+
     #[test]
-    fn test_release_remainder() {
-        let (env, _admin, funder, farmer, token, client) = setup();
+    fn test_full_lifecycle_with_balances() {
+        let Ctx { env, client, token, funder, farmer, contract } = setup();
+
+        // Step 1: Donation → funds locked
+        assert_eq!(balance(&env, &token, &funder),   10_000);
+        assert_eq!(balance(&env, &token, &contract), 0);
+        assert_eq!(balance(&env, &token, &farmer),   0);
 
         client.deposit(&funder, &farmer, &token, &10_000);
+
+        assert_eq!(balance(&env, &token, &funder),   0,      "funder drained");
+        assert_eq!(balance(&env, &token, &contract), 10_000, "contract holds full amount");
+        assert_eq!(balance(&env, &token, &farmer),   0,      "farmer not yet paid");
+
+        let state = client.get_escrow(&farmer).unwrap();
+        assert_eq!(state.status,       EscrowStatus::Funded);
+        assert_eq!(state.total_amount, 10_000);
+        assert_eq!(state.released,     0);
+
+        // Step 2: Planting verification → 75% released
         client.verify_milestone(&farmer, &dummy_hash(&env));
+
+        assert_eq!(balance(&env, &token, &contract), 2_500, "25% still locked");
+        assert_eq!(balance(&env, &token, &farmer),   7_500, "farmer received 75%");
+
+        let state = client.get_escrow(&farmer).unwrap();
+        assert_eq!(state.status,   EscrowStatus::Milestone1Released);
+        assert_eq!(state.released, 7_500);
+        assert!(state.verification_hash.is_some());
+
+        // Step 3: Survival / final milestone → remaining 25% released
         client.release_remainder(&farmer);
 
+        assert_eq!(balance(&env, &token, &contract), 0,      "contract fully drained");
+        assert_eq!(balance(&env, &token, &farmer),   10_000, "farmer received 100%");
+
         let state = client.get_escrow(&farmer).unwrap();
+        assert_eq!(state.status,   EscrowStatus::Completed);
         assert_eq!(state.released, 10_000);
-        assert_eq!(state.status, EscrowStatus::Completed);
     }
+
+    #[test]
+    fn test_tranche_amounts_non_round_deposit() {
+        let Ctx { env, client, token, funder, farmer, contract } = setup();
+        token::StellarAssetClient::new(&env, &token).mint(&funder, &999);
+        client.deposit(&funder, &farmer, &token, &999);
+
+        client.verify_milestone(&farmer, &dummy_hash(&env));
+        let tranche1 = (999_i128 * 7_500) / 10_000; // = 749
+        assert_eq!(balance(&env, &token, &farmer), tranche1);
+
+        client.release_remainder(&farmer);
+        assert_eq!(balance(&env, &token, &farmer),   999);
+        assert_eq!(balance(&env, &token, &contract), 0);
+    }
+
+    // ── Error paths ───────────────────────────────────────────────────────────
 
     #[test]
     #[should_panic(expected = "milestone already processed")]
     fn test_double_verify_rejected() {
-        let (env, _admin, funder, farmer, token, client) = setup();
-
+        let Ctx { env, client, token, funder, farmer, .. } = setup();
         client.deposit(&funder, &farmer, &token, &10_000);
         client.verify_milestone(&farmer, &dummy_hash(&env));
-        client.verify_milestone(&farmer, &dummy_hash(&env)); // must panic
+        client.verify_milestone(&farmer, &dummy_hash(&env));
     }
 
     #[test]
-    fn test_refund_before_milestone() {
-        let (_env, _admin, funder, farmer, token, client) = setup();
-
+    #[should_panic(expected = "first milestone not yet verified")]
+    fn test_release_remainder_before_milestone_rejected() {
+        let Ctx { client, token, funder, farmer, .. } = setup();
         client.deposit(&funder, &farmer, &token, &10_000);
+        client.release_remainder(&farmer);
+    }
+
+    #[test]
+    #[should_panic(expected = "amount must be positive")]
+    fn test_deposit_zero_rejected() {
+        let Ctx { client, token, funder, farmer, .. } = setup();
+        client.deposit(&funder, &farmer, &token, &0);
+    }
+
+    #[test]
+    #[should_panic(expected = "active escrow already exists")]
+    fn test_duplicate_deposit_rejected() {
+        let Ctx { client, token, funder, farmer, .. } = setup();
+        client.deposit(&funder, &farmer, &token, &5_000);
+        client.deposit(&funder, &farmer, &token, &5_000);
+    }
+
+    // ── Refund paths ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_refund_before_milestone_restores_funder_balance() {
+        let Ctx { env, client, token, funder, farmer, .. } = setup();
+        client.deposit(&funder, &farmer, &token, &10_000);
+        assert_eq!(balance(&env, &token, &funder), 0);
+
         client.refund(&farmer);
 
-        let state = client.get_escrow(&farmer).unwrap();
-        assert_eq!(state.status, EscrowStatus::Refunded);
+        assert_eq!(balance(&env, &token, &funder),  10_000, "funder fully refunded");
+        assert_eq!(balance(&env, &token, &farmer),  0,      "farmer got nothing");
+        assert_eq!(client.get_escrow(&farmer).unwrap().status, EscrowStatus::Refunded);
     }
 
     #[test]
     #[should_panic(expected = "cannot refund after milestone release")]
     fn test_refund_after_milestone_rejected() {
-        let (env, _admin, funder, farmer, token, client) = setup();
-
+        let Ctx { env, client, token, funder, farmer, .. } = setup();
         client.deposit(&funder, &farmer, &token, &10_000);
         client.verify_milestone(&farmer, &dummy_hash(&env));
-        client.refund(&farmer); // must panic
+        client.refund(&farmer);
+    }
+
+    // ── Multi-asset donation tests ────────────────────────────────────────────
+
+    fn make_token(env: &Env, admin: &Address, recipient: &Address, amount: i128) -> Address {
+        let token = env.register_stellar_asset_contract(admin.clone());
+        token::StellarAssetClient::new(env, &token).mint(recipient, &amount);
+        token
+    }
+
+    #[test]
+    fn test_xlm_donation_full_lifecycle() {
+        let Ctx { env, client, token: xlm, funder, farmer, contract } = setup();
+
+        client.deposit(&funder, &farmer, &xlm, &10_000);
+        assert_eq!(client.get_escrow(&farmer).unwrap().token, xlm);
+
+        client.verify_milestone(&farmer, &dummy_hash(&env));
+        assert_eq!(balance(&env, &xlm, &farmer),   7_500);
+        assert_eq!(balance(&env, &xlm, &contract), 2_500);
+
+        client.release_remainder(&farmer);
+        assert_eq!(balance(&env, &xlm, &farmer),   10_000, "farmer paid 100% in XLM");
+        assert_eq!(balance(&env, &xlm, &contract), 0);
+    }
+
+    #[test]
+    fn test_usdc_donation_full_lifecycle() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin  = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let farmer = Address::generate(&env);
+
+        let contract = env.register_contract(None, EscrowMilestone);
+        let client   = EscrowMilestoneClient::new(&env, &contract);
+        client.initialize(&admin);
+
+        let usdc = make_token(&env, &admin, &funder, 20_000);
+        client.deposit(&funder, &farmer, &usdc, &20_000);
+
+        assert_eq!(client.get_escrow(&farmer).unwrap().token, usdc);
+
+        client.verify_milestone(&farmer, &dummy_hash(&env));
+        assert_eq!(balance(&env, &usdc, &farmer),   15_000, "75% of 20_000 in USDC");
+        assert_eq!(balance(&env, &usdc, &contract), 5_000);
+
+        client.release_remainder(&farmer);
+        assert_eq!(balance(&env, &usdc, &farmer),   20_000, "farmer paid 100% in USDC");
+        assert_eq!(balance(&env, &usdc, &contract), 0);
+    }
+
+    #[test]
+    fn test_mixed_batch_xlm_and_usdc_no_cross_contamination() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin    = Address::generate(&env);
+        let donor_a  = Address::generate(&env);
+        let donor_b  = Address::generate(&env);
+        let farmer_a = Address::generate(&env);
+        let farmer_b = Address::generate(&env);
+
+        let contract = env.register_contract(None, EscrowMilestone);
+        let client   = EscrowMilestoneClient::new(&env, &contract);
+        client.initialize(&admin);
+
+        let xlm  = make_token(&env, &admin, &donor_a, 10_000);
+        let usdc = make_token(&env, &admin, &donor_b, 8_000);
+
+        client.deposit(&donor_a, &farmer_a, &xlm,  &10_000);
+        client.deposit(&donor_b, &farmer_b, &usdc, &8_000);
+
+        assert_eq!(client.get_escrow(&farmer_a).unwrap().token, xlm);
+        assert_eq!(client.get_escrow(&farmer_b).unwrap().token, usdc);
+
+        client.verify_milestone(&farmer_a, &dummy_hash(&env));
+        client.verify_milestone(&farmer_b, &dummy_hash(&env));
+
+        assert_eq!(balance(&env, &xlm,  &farmer_a), 7_500);
+        assert_eq!(balance(&env, &usdc, &farmer_b), 6_000);
+
+        // No cross-asset leakage
+        assert_eq!(balance(&env, &usdc, &farmer_a), 0, "farmer_a has no USDC");
+        assert_eq!(balance(&env, &xlm,  &farmer_b), 0, "farmer_b has no XLM");
+
+        client.release_remainder(&farmer_a);
+        client.release_remainder(&farmer_b);
+
+        assert_eq!(balance(&env, &xlm,  &farmer_a), 10_000);
+        assert_eq!(balance(&env, &usdc, &farmer_b), 8_000);
+        assert_eq!(balance(&env, &xlm,  &contract), 0);
+        assert_eq!(balance(&env, &usdc, &contract), 0);
+    }
+
+    #[test]
+    fn test_mixed_batch_independent_escrow_accounting() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin    = Address::generate(&env);
+        let donor    = Address::generate(&env);
+        let farmer_a = Address::generate(&env);
+        let farmer_b = Address::generate(&env);
+        let farmer_c = Address::generate(&env);
+
+        let contract = env.register_contract(None, EscrowMilestone);
+        let client   = EscrowMilestoneClient::new(&env, &contract);
+        client.initialize(&admin);
+
+        let xlm  = make_token(&env, &admin, &donor, 50_000);
+        let usdc = make_token(&env, &admin, &donor, 30_000);
+
+        client.deposit(&donor, &farmer_a, &xlm,  &10_000);
+        client.deposit(&donor, &farmer_b, &usdc, &20_000);
+        client.deposit(&donor, &farmer_c, &xlm,  &5_000);
+
+        assert_eq!(client.get_escrow(&farmer_a).unwrap().total_amount, 10_000);
+        assert_eq!(client.get_escrow(&farmer_b).unwrap().total_amount, 20_000);
+        assert_eq!(client.get_escrow(&farmer_c).unwrap().total_amount, 5_000);
+
+        client.verify_milestone(&farmer_a, &dummy_hash(&env));
+        client.verify_milestone(&farmer_b, &dummy_hash(&env));
+        client.verify_milestone(&farmer_c, &dummy_hash(&env));
+
+        assert_eq!(client.get_escrow(&farmer_a).unwrap().released, 7_500);
+        assert_eq!(client.get_escrow(&farmer_b).unwrap().released, 15_000);
+        assert_eq!(client.get_escrow(&farmer_c).unwrap().released, 3_750);
+
+        client.release_remainder(&farmer_a);
+        client.release_remainder(&farmer_b);
+        client.release_remainder(&farmer_c);
+
+        assert_eq!(balance(&env, &xlm,  &farmer_a), 10_000);
+        assert_eq!(balance(&env, &usdc, &farmer_b), 20_000);
+        assert_eq!(balance(&env, &xlm,  &farmer_c), 5_000);
+        assert_eq!(balance(&env, &xlm,  &contract), 0);
+        assert_eq!(balance(&env, &usdc, &contract), 0);
+    }
+
+    #[test]
+    fn test_usdc_refund_returns_usdc_to_funder() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin  = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let farmer = Address::generate(&env);
+
+        let contract = env.register_contract(None, EscrowMilestone);
+        let client   = EscrowMilestoneClient::new(&env, &contract);
+        client.initialize(&admin);
+
+        let usdc = make_token(&env, &admin, &funder, 5_000);
+        client.deposit(&funder, &farmer, &usdc, &5_000);
+        assert_eq!(balance(&env, &usdc, &funder), 0);
+
+        client.refund(&farmer);
+
+        assert_eq!(balance(&env, &usdc, &funder),   5_000, "funder refunded in USDC");
+        assert_eq!(balance(&env, &usdc, &farmer),   0);
+        assert_eq!(balance(&env, &usdc, &contract), 0);
+    }
+
+    // ── Init guard ────────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "already initialized")]
+    fn test_initialize_twice_rejected() {
+        let Ctx { env, client, .. } = setup();
+        client.initialize(&Address::generate(&env));
     }
 }
