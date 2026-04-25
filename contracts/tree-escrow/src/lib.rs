@@ -11,7 +11,7 @@
 //!                              ↘ Disputed / Refunded
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
+    contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, BytesN, Env, IntoVal,
 };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -52,9 +52,9 @@ pub struct EscrowRecord {
     /// Ledger timestamp when planting was verified
     pub planted_at:         Option<u64>,
     /// SHA-256 of GPS + photo proof submitted at planting
-    pub planting_proof:     Option<BytesN<32>>,
+    pub planting_proof:     Option<Bytes>,
     /// SHA-256 of GPS + photo proof submitted at survival check
-    pub survival_proof:     Option<BytesN<32>>,
+    pub survival_proof:     Option<Bytes>,
 }
 
 // ── Contract ──────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ impl TreeEscrow {
         rec.released       += tranche1;
         rec.status          = EscrowStatus::Planted;
         rec.planted_at      = Some(env.ledger().timestamp());
-        rec.planting_proof  = Some(proof_hash.clone());
+        rec.planting_proof  = Some(proof_hash.clone().into());
 
         env.storage().persistent().set(&key, &rec);
 
@@ -177,7 +177,7 @@ impl TreeEscrow {
 
         rec.released      += tranche2;
         rec.status         = EscrowStatus::Completed;
-        rec.survival_proof = Some(proof_hash);
+        rec.survival_proof = Some(proof_hash.into());
 
         env.storage().persistent().set(&key, &rec);
 
@@ -229,7 +229,7 @@ impl TreeEscrow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env};
+    use soroban_sdk::{testutils::{Address as _, Ledger}, token, Address, BytesN, Env};
 
     fn setup() -> (Env, Address, Address, Address, Address, TreeEscrowClient<'static>) {
         let env = Env::default();
@@ -250,7 +250,7 @@ mod tests {
     }
 
     fn proof(env: &Env, seed: u8) -> BytesN<32> {
-        BytesN::from_array(env, &[seed; 32])
+        BytesN::from_array(env, &[seed; 32]).into()
     }
 
     #[test]
