@@ -1,13 +1,9 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, crypto::Hash, symbol_short, vec, Address, Bytes,
-    BytesN, Env, String,
+    contract, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Bytes, BytesN, Env,
+    String,
 };
-
-// Storage key namespace
-const NULLIFIER: &str = "NULL";
-const ADMIN: &str = "ADMIN";
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
@@ -38,7 +34,9 @@ impl NullifierRegistry {
         if env.storage().instance().has(&symbol_short!("ADMIN")) {
             panic!("already initialized");
         }
-        env.storage().instance().set(&symbol_short!("ADMIN"), &admin);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("ADMIN"), &admin);
     }
 
     /// Compute a SHA-256 commitment from GPS + timestamp + farmer_id.
@@ -56,11 +54,7 @@ impl NullifierRegistry {
         let commitment = Self::_compute_commitment(&env, &input);
 
         // Reject if already registered — nullifier check
-        if env
-            .storage()
-            .persistent()
-            .has(&commitment)
-        {
+        if env.storage().persistent().has(&commitment) {
             panic!("commitment already registered: double-counting rejected");
         }
 
@@ -95,16 +89,16 @@ impl NullifierRegistry {
 
     fn _compute_commitment(env: &Env, input: &TreeCommitmentInput) -> BytesN<32> {
         // Encode: gps_bytes | timestamp_be_8_bytes | farmer_id_bytes
-        let gps_bytes = input.gps.to_xdr(env);
+        let gps_bytes = input.gps.clone().to_xdr(env);
         let ts_bytes = input.timestamp.to_be_bytes();
-        let farmer_bytes = input.farmer_id.to_xdr(env);
+        let farmer_bytes = input.farmer_id.clone().to_xdr(env);
 
         let mut preimage = Bytes::new(env);
         preimage.append(&gps_bytes);
         preimage.extend_from_array(&ts_bytes);
         preimage.append(&farmer_bytes);
 
-        env.crypto().sha256(&preimage)
+        env.crypto().sha256(&preimage).into()
     }
 }
 
