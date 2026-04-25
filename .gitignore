@@ -42,3 +42,7 @@ next-env.d.ts
 
 FarmCredit*
 .claude
+
+# Rust/Cargo
+/contracts/target/
+/contracts/Cargo.lock
