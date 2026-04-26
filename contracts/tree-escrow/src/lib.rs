@@ -4,6 +4,7 @@
 //!
 //! Holds donor funds and releases them in two tranches:
 //!   • Tranche 1 (75%) — released on verified planting (GPS + photo proof)
+//!   • TREE reward — 1 TREE token minted to donor per verified tree
 //!   • Tranche 2 (25%) — released after 6-month survival verification
 //!
 //! State machine:
@@ -46,6 +47,9 @@ pub struct EscrowRecord {
     pub farmer: Address,
     pub token: Address,
     pub total_amount: i128,
+    pub tree_count: i128,
+    pub verified_tree_count: i128,
+    pub tree_tokens_minted: i128,
     pub released: i128,
     pub status: EscrowStatus,
     /// Ledger timestamp when planting was verified
@@ -65,22 +69,47 @@ pub struct TreeEscrow;
 
 #[contractimpl]
 impl TreeEscrow {
-    /// One-time initialisation — sets the verifier/admin address.
-    pub fn initialize(env: Env, admin: Address) {
+    /// One-time initialisation — sets the verifier/admin and TREE token address.
+    ///
+    /// The escrow contract must be the TREE token admin so it can mint rewards
+    /// when planting verification is confirmed.
+    pub fn initialize(env: Env, admin: Address, tree_token: Address) {
         if env.storage().instance().has(&symbol_short!("ADMIN")) {
             panic!("already initialized");
+        }
+        if token::StellarAssetClient::new(&env, &tree_token).admin()
+            != env.current_contract_address()
+        {
+            panic!("contract must be tree token admin");
         }
         env.storage()
             .instance()
             .set(&symbol_short!("ADMIN"), &admin);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("TREE"), &tree_token);
     }
 
     /// Donor deposits `amount` of `token` into escrow for `farmer`.
-    pub fn deposit(env: Env, donor: Address, farmer: Address, token: Address, amount: i128) {
+    ///
+    /// `tree_count` is the maximum number of trees covered by this donation.
+    /// Once planting is verified, the contract mints one TREE token per
+    /// verifier-confirmed tree to the donor address stored here.
+    pub fn deposit(
+        env: Env,
+        donor: Address,
+        farmer: Address,
+        token: Address,
+        amount: i128,
+        tree_count: i128,
+    ) {
         donor.require_auth();
 
         if amount <= 0 {
             panic!("amount must be positive");
+        }
+        if tree_count <= 0 {
+            panic!("tree count must be positive");
         }
 
         let key = Self::record_key(&env, &farmer);
@@ -99,6 +128,9 @@ impl TreeEscrow {
                 farmer: farmer.clone(),
                 token,
                 total_amount: amount,
+                tree_count,
+                verified_tree_count: 0,
+                tree_tokens_minted: 0,
                 released: 0,
                 status: EscrowStatus::Funded,
                 planted_at: None,
@@ -114,7 +146,13 @@ impl TreeEscrow {
 
     /// Verifier calls this after GPS + photo proof of planting is validated.
     /// Releases 75% of escrowed funds instantly to the farmer.
-    pub fn verify_planting(env: Env, farmer: Address, proof_hash: BytesN<32>) {
+    /// Mints one TREE token to the donor for each verified tree.
+    pub fn verify_planting(
+        env: Env,
+        farmer: Address,
+        proof_hash: BytesN<32>,
+        verified_tree_count: i128,
+    ) {
         Self::require_admin(&env);
 
         let key = Self::record_key(&env, &farmer);
@@ -127,16 +165,29 @@ impl TreeEscrow {
         if rec.status != EscrowStatus::Funded {
             panic!("planting already verified or escrow not active");
         }
+        if verified_tree_count <= 0 {
+            panic!("verified tree count must be positive");
+        }
+        if verified_tree_count > rec.tree_count {
+            panic!("verified tree count exceeds donation");
+        }
 
         let tranche1 = (rec.total_amount * TRANCHE_1_BPS) / BPS_DENOM;
+        let tree_token = Self::tree_token(&env);
+        let tree_tokens = verified_tree_count
+            .checked_mul(Self::token_unit(&env, &tree_token))
+            .expect("tree token mint amount overflow");
 
         token::Client::new(&env, &rec.token).transfer(
             &env.current_contract_address(),
             &rec.farmer,
             &tranche1,
         );
+        token::StellarAssetClient::new(&env, &tree_token).mint(&rec.donor, &tree_tokens);
 
         rec.released += tranche1;
+        rec.verified_tree_count = verified_tree_count;
+        rec.tree_tokens_minted = tree_tokens;
         rec.status = EscrowStatus::Planted;
         rec.planted_at = Some(env.ledger().timestamp());
         rec.planting_proof = proof_hash.clone();
@@ -145,6 +196,8 @@ impl TreeEscrow {
 
         env.events()
             .publish((symbol_short!("planted"), farmer), tranche1);
+        env.events()
+            .publish((symbol_short!("treemint"), rec.donor.clone()), tree_tokens);
     }
 
     /// Verifier calls this after 6-month survival check passes.
@@ -243,6 +296,24 @@ impl TreeEscrow {
         (symbol_short!("ESC"), farmer.clone()).into_val(env)
     }
 
+    fn token_unit(env: &Env, token: &Address) -> i128 {
+        let decimals = token::Client::new(env, token).decimals();
+        let mut unit = 1i128;
+        let mut i = 0u32;
+        while i < decimals {
+            unit = unit.checked_mul(10).expect("token unit overflow");
+            i += 1;
+        }
+        unit
+    }
+
+    fn tree_token(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&symbol_short!("TREE"))
+            .expect("tree token not initialized")
+    }
+
     fn require_admin(env: &Env) {
         let admin: Address = env
             .storage()
@@ -269,6 +340,7 @@ mod tests {
         Address,
         Address,
         Address,
+        Address,
         TreeEscrowClient<'static>,
     ) {
         let env = Env::default();
@@ -286,8 +358,12 @@ mod tests {
             .address();
         token::StellarAssetClient::new(&env, &token_id).mint(&donor, &10_000);
 
-        client.initialize(&admin);
-        (env, admin, donor, farmer, token_id, client)
+        let tree_token_id = env
+            .register_stellar_asset_contract_v2(contract_id.clone())
+            .address();
+
+        client.initialize(&admin, &tree_token_id);
+        (env, admin, donor, farmer, token_id, tree_token_id, client)
     }
 
     fn proof(env: &Env, seed: u8) -> BytesN<32> {
@@ -295,21 +371,46 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "contract must be tree token admin")]
+    fn test_initialize_requires_contract_as_tree_token_admin() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, TreeEscrow);
+        let client = TreeEscrowClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let tree_token_id = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+
+        client.initialize(&admin, &tree_token_id);
+    }
+
+    #[test]
     fn test_full_lifecycle() {
-        let (env, _admin, donor, farmer, token, client) = setup();
+        let (env, _admin, donor, farmer, token, tree_token, client) = setup();
 
         // Deposit
-        client.deposit(&donor, &farmer, &token, &10_000);
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
         assert_eq!(
             client.get_record(&farmer).unwrap().status,
             EscrowStatus::Funded
         );
 
         // Verify planting → 75% released
-        client.verify_planting(&farmer, &proof(&env, 1));
+        client.verify_planting(&farmer, &proof(&env, 1), &42);
         let rec = client.get_record(&farmer).unwrap();
         assert_eq!(rec.released, 7_500);
         assert_eq!(rec.status, EscrowStatus::Planted);
+        assert_eq!(rec.tree_count, 42);
+        assert_eq!(rec.verified_tree_count, 42);
+        let tree_token_unit = 10i128.pow(token::Client::new(&env, &tree_token).decimals());
+        assert_eq!(rec.tree_tokens_minted, 42 * tree_token_unit);
+        assert_eq!(
+            token::Client::new(&env, &tree_token).balance(&donor),
+            42 * tree_token_unit
+        );
 
         // Fast-forward ledger by 6 months
         env.ledger()
@@ -326,10 +427,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "6-month survival period not yet elapsed")]
     fn test_survival_too_early_rejected() {
-        let (env, _admin, donor, farmer, token, client) = setup();
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
 
-        client.deposit(&donor, &farmer, &token, &10_000);
-        client.verify_planting(&farmer, &proof(&env, 1));
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &42);
 
         // Only 1 day later — should panic
         env.ledger().with_mut(|l| l.timestamp += 86_400);
@@ -339,10 +440,10 @@ mod tests {
     #[test]
     #[should_panic(expected = "survival rate below minimum")]
     fn test_survival_below_70_percent_rejected() {
-        let (env, _admin, donor, farmer, token, client) = setup();
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
 
-        client.deposit(&donor, &farmer, &token, &10_000);
-        client.verify_planting(&farmer, &proof(&env, 1));
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &42);
 
         env.ledger()
             .with_mut(|l| l.timestamp += SIX_MONTHS_SECS + 1);
@@ -352,18 +453,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "planting already verified")]
     fn test_double_planting_rejected() {
-        let (env, _admin, donor, farmer, token, client) = setup();
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
 
-        client.deposit(&donor, &farmer, &token, &10_000);
-        client.verify_planting(&farmer, &proof(&env, 1));
-        client.verify_planting(&farmer, &proof(&env, 1)); // must panic
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &42); // must panic
     }
 
     #[test]
     fn test_refund_before_planting() {
-        let (_env, _admin, donor, farmer, token, client) = setup();
+        let (_env, _admin, donor, farmer, token, _tree_token, client) = setup();
 
-        client.deposit(&donor, &farmer, &token, &10_000);
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
         client.refund(&farmer);
         assert_eq!(
             client.get_record(&farmer).unwrap().status,
@@ -374,10 +475,54 @@ mod tests {
     #[test]
     #[should_panic(expected = "cannot refund after planting")]
     fn test_refund_after_planting_rejected() {
-        let (env, _admin, donor, farmer, token, client) = setup();
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
 
-        client.deposit(&donor, &farmer, &token, &10_000);
-        client.verify_planting(&farmer, &proof(&env, 1));
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &42);
         client.refund(&farmer); // must panic
+    }
+
+    #[test]
+    #[should_panic(expected = "tree count must be positive")]
+    fn test_deposit_rejects_zero_tree_count() {
+        let (_env, _admin, donor, farmer, token, _tree_token, client) = setup();
+
+        client.deposit(&donor, &farmer, &token, &10_000, &0);
+    }
+
+    #[test]
+    fn test_verified_tree_count_controls_tree_mint_amount() {
+        let (env, _admin, donor, farmer, token, tree_token, client) = setup();
+
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &30);
+
+        let tree_token_unit = 10i128.pow(token::Client::new(&env, &tree_token).decimals());
+        let rec = client.get_record(&farmer).unwrap();
+        assert_eq!(rec.tree_count, 42);
+        assert_eq!(rec.verified_tree_count, 30);
+        assert_eq!(rec.tree_tokens_minted, 30 * tree_token_unit);
+        assert_eq!(
+            token::Client::new(&env, &tree_token).balance(&donor),
+            30 * tree_token_unit
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "verified tree count exceeds donation")]
+    fn test_verified_tree_count_cannot_exceed_donation() {
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
+
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &43);
+    }
+
+    #[test]
+    #[should_panic(expected = "verified tree count must be positive")]
+    fn test_verified_tree_count_must_be_positive() {
+        let (env, _admin, donor, farmer, token, _tree_token, client) = setup();
+
+        client.deposit(&donor, &farmer, &token, &10_000, &42);
+        client.verify_planting(&farmer, &proof(&env, 1), &0);
     }
 }
