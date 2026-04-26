@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Listing } from '@/lib/types/marketplace';
+import type { MarketplaceListing as Listing } from '@/lib/types/marketplace';
 import { checkAvailability } from '@/lib/api/marketplace';
 import { Text } from '@/components/atoms/Text';
 import { Badge } from '@/components/atoms/Badge';
@@ -51,7 +51,7 @@ export function ListingDetail({ listing }: ListingDetailProps) {
       } else {
         setError('Requested quantity is no longer available.');
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred while checking availability. Please try again.');
     } finally {
       setIsChecking(false);
