@@ -9,7 +9,7 @@
 //!   4. Remaining 25% stays locked until final milestone or dispute resolution
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, Env,
+    contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, Env, IntoVal,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ pub struct EscrowState {
     pub total_amount:  i128,
     pub released:      i128,
     pub status:        EscrowStatus,
-    pub verification_hash: Option<soroban_sdk::BytesN<32>>,
+    pub verification_hash: Option<Bytes>,
 }
 
 #[contract]
@@ -131,7 +131,7 @@ impl EscrowMilestone {
 
         state.released          = release_amount;
         state.status            = EscrowStatus::Milestone1Released;
-        state.verification_hash = Some(verification_hash.clone());
+        state.verification_hash = Some(verification_hash.clone().into());
 
         env.storage().persistent().set(&key, &state);
 
@@ -237,7 +237,7 @@ impl EscrowMilestone {
 mod tests {
     use super::*;
     use soroban_sdk::{
-        testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
+        testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger},
         token, Address, BytesN, Env,
     };
 
@@ -263,7 +263,7 @@ mod tests {
     }
 
     fn dummy_hash(env: &Env) -> BytesN<32> {
-        BytesN::from_array(env, &[1u8; 32])
+        BytesN::from_array(env, &[1u8; 32]).into()
     }
 
     #[test]
