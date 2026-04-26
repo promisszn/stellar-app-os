@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import type { StripePaymentIntentRequest } from '@/lib/types/donation-payment';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-  apiVersion: '2025-04-30.basil',
+  apiVersion: '2026-02-25.clover',
 });
 
 export async function POST(request: Request) {
