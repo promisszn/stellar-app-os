@@ -6,5 +6,13 @@ members = [
     "farmer-registry",
     "donation-escrow",
     "zk-location-verifier",
+    "location-proof",
+    "naira-payout",
 ]
 resolver = "2"
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1
+panic = "abort"
