@@ -1,5 +1,5 @@
 [workspace]
-members = ["donation-escrow", "nullifier-registry", "escrow-milestone", "tree-escrow", "location-proof", "naira-payout"]
+members = ["donation-escrow", "nullifier-registry", "escrow-milestone", "tree-escrow", "location-proof", "naira-payout", "farmer-registry"]
 resolver = "2"
 
 [profile.release]

@@ -41,8 +41,9 @@ yarn-error.log*
 next-env.d.ts
 
 FarmCredit*
-
-# rust
-/contracts/target/
-**/test_snapshots/
 .claude
+
+# Rust/Cargo
+/contracts/target/
+/contracts/Cargo.lock
+**/test_snapshots/
